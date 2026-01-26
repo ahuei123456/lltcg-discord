@@ -22,4 +22,3 @@ repos:
         language: system
         types: [python]
         require_serial: true
-        args: ["src"] # Explicitly pointing to src usually helps
