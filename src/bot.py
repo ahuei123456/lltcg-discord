@@ -3,23 +3,36 @@ import logging
 import sys
 
 import discord
-from discord import app_commands
+from discord.ext import commands
 
 from src import config
+from src.cogs.card_lookup import CardLookup
+from src.db.card_repository import CardRepository
 
 _log = logging.getLogger(__name__)
 
 
-class LLTCGClient(discord.Client):
-    def __init__(self, *, intents: discord.Intents):
-        super().__init__(intents=intents)
-
-        self.tree = app_commands.CommandTree(self)
+class LLTCGBot(commands.Bot):
+    def __init__(self):
+        intents = discord.Intents.default()
+        intents.message_content = True
+        super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self):
-        _log.info("Initial data loaded into cache.")
-
         settings = config.get_config()
+
+        # Initialize Repository
+        card_repo = CardRepository(settings["CARD_DATA_PATH"])
+        card_repo.load_data()
+
+        # Load Cogs
+        await self.add_cog(CardLookup(self, card_repo))
+
+        _log.info("Initial data loaded and Cog added.")
+
+        # Sync commands
+        # Note: In production, syncing globally can take up to an hour.
+        # Syncing to specific guilds is instant for testing.
         for guild_id in settings["GUILDS"]:
             guild = discord.Object(id=guild_id)
             self.tree.copy_global_to(guild=guild)
@@ -27,10 +40,7 @@ class LLTCGClient(discord.Client):
         _log.info("Commands synced.")
 
 
-intents = discord.Intents.default()
-intents.message_content = True
-
-client = LLTCGClient(intents=intents)
+client = LLTCGBot()
 
 
 def parse_args() -> argparse.Namespace:
@@ -61,6 +71,8 @@ def main() -> None:
         _log.critical("DISCORD_TOKEN is not set")
     elif not settings["GUILDS"]:
         _log.critical("GUILDS is not set")
+    elif not settings["CARD_DATA_PATH"]:
+        _log.critical("CARD_DATA_PATH is not set")
     else:
         try:
             client.run(settings["DISCORD_TOKEN"], log_handler=None)  # Use basicConfig handler

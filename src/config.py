@@ -26,7 +26,7 @@ def load_config(path: str = "config.json") -> dict[str, Any]:
             # Use object_hook to load into a namespace for attribute access
             data = json.load(f, object_hook=lambda d: dict(**d))
 
-        required_keys = ["DISCORD_TOKEN", "EVENTS_FILE", "RESPONSES_FILE", "GUILDS"]
+        required_keys = ["DISCORD_TOKEN", "GUILDS", "CARD_DATA_PATH"]
         for key in required_keys:
             if key not in data:
                 raise ConfigError(f"Missing required key '{key}' in {path}")
