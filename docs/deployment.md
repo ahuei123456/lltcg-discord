@@ -39,23 +39,22 @@ scp -r . ubuntu@<INSTANCE_IP>:~/lltcg-discord
 ```
 
 ### C. Build and Run
-On the server:
+On the server, run the automation script to build the image and start the container:
 ```bash
 cd ~/lltcg-discord
-# Build the image
-docker build -t lltcg-bot .
-
-# Run the container (detached, with auto-restart)
-docker run -d \
-  --name lltcg-bot \
-  --restart always \
-  -v $(pwd)/config.json:/app/config.json:ro \
-  -v $(pwd)/data/card_data.json:/app/data/card_data.json:ro \
-  -v $(pwd)/data/images:/app/data/images \
-  lltcg-bot
+chmod +x scripts/deploy.sh
+./scripts/deploy.sh
 ```
 
-## 4. Troubleshooting
+## 4. Updating & Redeploying
+Since everything is automated, just run the script again whenever you want to update the bot with your latest code:
+
+```bash
+cd ~/lltcg-discord
+./scripts/deploy.sh
+```
+
+## 5. Troubleshooting
 - **Logs**: `docker logs -f lltcg-bot`
-- **Restart**: `docker restart lltcg-bot`
-- **Update**: `git pull && docker build -t lltcg-bot . && docker stop lltcg-bot && docker rm lltcg-bot && [Run Command Above]`
+- **Restart (No Code Change)**: `docker restart lltcg-bot` (Use this if you only changed `config.json` or `card_data.json`, as they are mounted live).
+- **Verify Mounts**: `docker inspect lltcg-bot`
