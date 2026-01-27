@@ -23,6 +23,7 @@
     - Maintains pre-sorted lists for valid IDs to optimize autocomplete.
 - **Lookup Cog** (`src/cogs/card_lookup.py`):
     - Implements `/card` slash command.
+    - **Refactor**: Split into modular helpers (`_build_card_embed`, `_get_or_download_image`, `_apply_ability_emojis`) for better maintainability.
     - Handles autocomplete (Series/Product/Rarity) and validation.
     - **Visuals**: Features a rich emoji system for required/blade hearts.
     - **Logic**: Uses single-pass regex replacement in ability text to swap keywords for emojis without nesting errors.
@@ -34,6 +35,7 @@
     - `DISCORD_TOKEN`: Bot token.
     - `GUILDS`: List of integer Guild IDs for testing/sync.
     - `CARD_DATA_PATH`: Path to the JSON data file.
+    - `IMAGE_CACHE_PATH`: Directory for locally cached card images.
 
 ## Development Workflow
 - **Linting**: `uv run ruff check . --fix`

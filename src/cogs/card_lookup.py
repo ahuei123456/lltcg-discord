@@ -1,10 +1,15 @@
 import logging
+import re
+from pathlib import Path
+from urllib.parse import quote
 
+import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands
 
-from src.db.card_repository import CardRepository
+from src import config
+from src.db.card_repository import CardData, CardRepository
 
 _log = logging.getLogger(__name__)
 
@@ -13,6 +18,159 @@ class CardLookup(commands.Cog):
     def __init__(self, bot: commands.Bot, card_repo: CardRepository):
         self.bot = bot
         self.card_repo = card_repo
+        # Retrieve image cache path from centralized config
+        settings = config.get_config()
+        self.img_cache_dir = Path(settings.get("IMAGE_CACHE_PATH", "data/images"))
+
+        # heart types -> emoji names mapping
+        self.emoji_map = {
+            "heart01": "heart01",  # Pink
+            "heart02": "heart02",  # Red
+            "heart03": "heart03",  # Yellow
+            "heart04": "heart04",  # Green
+            "heart05": "heart05",  # Blue
+            "heart06": "heart06",  # Purple
+            "heart0": "heart00",  # Grey
+            "ALL1": "sp_all",  # All (Blade Heart generic)
+            "b_heart01": "blade_heart01",
+            "b_heart02": "blade_heart02",
+            "b_heart03": "blade_heart03",
+            "b_heart04": "blade_heart04",
+            "b_heart05": "blade_heart05",
+            "b_heart06": "blade_heart06",
+            "ALL": "sp_all",  # Variant
+            "ドロー": "sp_draw",
+            "スコア": "sp_score",
+        }
+
+    async def _get_or_download_image(
+        self, series: str, product: str, number_str: str, rarity: str, img_url: str | None
+    ) -> discord.File | None:
+        """Checks local cache for image, downloads if missing, and returns discord.File."""
+        if not img_url:
+            return None
+
+        # Build local path
+        safe_series = series.replace("!", "SP")
+        safe_rarity = rarity.replace("+", "plus")
+        filename = f"{safe_series}-{product}-{number_str}-{safe_rarity}.png"
+        local_path = self.img_cache_dir / filename
+
+        # Download if missing
+        if not local_path.exists():
+            try:
+                # Ensure directory exists
+                self.img_cache_dir.mkdir(parents=True, exist_ok=True)
+
+                # Encode URL
+                proto, rest = img_url.split("://", 1)
+                parts = rest.split("/", 1)
+                if len(parts) == 2:
+                    domain, path = parts
+                    encoded_path = quote(path, safe="/:?=&!")
+                    download_url = f"{proto}://{domain}/{encoded_path}"
+
+                    headers = {
+                        "User-Agent": (
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                            "AppleWebKit/537.36 (KHTML, like Gecko) "
+                            "Chrome/91.0.4472.124 Safari/537.36"
+                        )
+                    }
+                    async with aiohttp.ClientSession() as session, session.get(download_url, headers=headers) as resp:
+                        if resp.status == 200:
+                            data = await resp.read()
+                            with open(local_path, "wb") as f:
+                                f.write(data)
+                            _log.info(f"Cached image: {local_path.name}")
+                        else:
+                            _log.error(f"Download failed for {download_url}: {resp.status}")
+            except Exception as e:
+                _log.error(f"Image download error: {e}")
+
+        # Return file if exists
+        if local_path.exists():
+            return discord.File(local_path, filename="image.png")
+        return None
+
+    def _format_hearts(self, hearts_data: dict[str, str]) -> str:
+        """Formats a heart dictionary into an emoji string."""
+        parts = []
+        for key, amount in hearts_data.items():
+            emoji_name = self.emoji_map.get(key, key)
+            emoji = discord.utils.get(self.bot.emojis, name=emoji_name)
+            display_emoji = str(emoji) if emoji else f":{emoji_name}:"
+            parts.append(f"{display_emoji} {amount}")
+        return "   ".join(parts)
+
+    def _apply_ability_emojis(self, text: str) -> str:
+        """Replaces keywords in ability text with emojis using single-pass regex."""
+        sorted_keys = sorted(self.emoji_map.keys(), key=len, reverse=True)
+        pattern = re.compile("|".join(re.escape(k) for k in sorted_keys))
+
+        def emoji_replacer(match):
+            key = match.group(0)
+            emoji_name = self.emoji_map[key]
+            emoji = discord.utils.get(self.bot.emojis, name=emoji_name)
+            return str(emoji) if emoji else f":{emoji_name}:"
+
+        return pattern.sub(emoji_replacer, text)
+
+    def _build_card_embed(self, card_data: CardData) -> discord.Embed:
+        """Constructs the rich embed for a card."""
+        embed = discord.Embed(
+            title=f"{card_data['name']} ({card_data['rarity']})",
+            description=f"**Set**: {card_data['set']}\n**Type**: {card_data['card_type']}",
+            color=discord.Color.blue(),
+        )
+
+        # Basic Fields
+        if card_data.get("unit"):
+            embed.add_field(name="Unit", value=card_data["unit"], inline=True)
+        if card_data.get("group"):
+            embed.add_field(name="Group", value=", ".join(card_data["group"]), inline=True)
+        if card_data.get("cost"):
+            embed.add_field(name="Cost", value=card_data["cost"], inline=True)
+        if card_data.get("score"):
+            embed.add_field(name="Score", value=card_data["score"], inline=True)
+
+        # Heart Stats
+        required_hearts = card_data.get("required_hearts")
+        if required_hearts:
+            text = self._format_hearts(required_hearts)
+            embed.add_field(name="Required Hearts", value=text, inline=False)
+
+        # Blade Heart Logic
+        blade_parts = []
+        blade_hearts = card_data.get("blade_hearts")
+        if blade_hearts:
+            blade_parts.append(self._format_hearts(blade_hearts))
+
+        special_hearts = card_data.get("special_hearts")
+        if special_hearts:
+            emoji_name = self.emoji_map.get(special_hearts)
+            emoji = discord.utils.get(self.bot.emojis, name=emoji_name) if emoji_name else None
+            blade_parts.append(str(emoji) if emoji else (f":{emoji_name}:" if emoji_name else special_hearts))
+
+        if blade_parts:
+            embed.add_field(name="Blade Heart", value="   ".join(blade_parts), inline=False)
+
+        hearts = card_data.get("hearts")
+        if hearts:
+            text = self._format_hearts(hearts)
+            embed.add_field(name="Hearts", value=text, inline=False)
+
+        # Ability Text
+        info_text = card_data.get("info_text")
+        if info_text:
+            text = "\n".join(info_text)
+            text = self._apply_ability_emojis(text)
+            if len(text) > 1024:
+                text = text[:1021] + "..."
+            embed.add_field(name="Ability", value=text, inline=False)
+
+        embed.set_footer(text=f"ID: {card_data['card_number']}")
+        return embed
 
     async def series_autocomplete(
         self, interaction: discord.Interaction, current: str
@@ -43,165 +201,25 @@ class CardLookup(commands.Cog):
     async def card(self, interaction: discord.Interaction, series: str, product: str, number: int, rarity: str):
         await interaction.response.defer()
 
-        # Pad number to 3 digits (e.g. 32 -> "032")
         number_str = f"{number:03d}"
-
         card_data = self.card_repo.get_card(series, product, number_str, rarity)
 
         if not card_data:
-            # Try to help the user if they typed something close
-            # But per spec, we require all 4 to match uniquely.
             await interaction.followup.send(
-                f"Card not found: `{series}-{product}-{number_str}-{rarity}`.\nPlease check the ID components.",
+                f"Card not found: `{series}-{product}-{number_str}-{rarity}`.",
                 ephemeral=True,
             )
             return
 
-        embed = discord.Embed(
-            title=f"{card_data['name']} ({card_data['rarity']})",
-            description=f"**Set**: {card_data['set']}\n**Type**: {card_data['card_type']}",
-            color=discord.Color.blue(),  # Default color, can be customized based on unit/group
+        # Prepare Embed
+        embed = self._build_card_embed(card_data)
+
+        # Prepare Image
+        file = await self._get_or_download_image(series, product, number_str, rarity, card_data.get("img_url"))
+        if file:
+            embed.set_image(url="attachment://image.png")
+
+        # Send
+        await interaction.followup.send(embed=embed, file=file) if file else await interaction.followup.send(
+            embed=embed
         )
-
-        if card_data.get("img_url"):
-            # Ensure URL is properly encoded for Discord
-            # We only want to quote the path part, but specific characters like ! need encoding
-            from urllib.parse import quote
-        # URL encoding for potentially sensitive characters (like '!')
-        url = card_data.get("img_url")
-        if url:
-            try:
-                # Split protocol
-                proto, rest = url.split("://", 1)
-                # Split path from domain
-                parts = rest.split("/", 1)
-                if len(parts) == 2:
-                    domain, path = parts
-                    # Keep '!' safe as it seems required/standard for these card URLs
-                    encoded_path = quote(path, safe="/:?=&!")
-                    url = f"{proto}://{domain}/{encoded_path}"
-            except Exception as e:
-                _log.error(f"Error encoding URL {url}: {e}")
-
-            embed.set_image(url=url)
-
-        # Add Unit and Group info
-        if card_data.get("unit"):
-            embed.add_field(name="Unit", value=card_data["unit"], inline=True)
-
-        if card_data.get("group"):
-            # Group is a list of strings
-            group_text = ", ".join(card_data["group"])
-            embed.add_field(name="Group", value=group_text, inline=True)
-
-        # Add basic fields
-        if card_data.get("cost"):
-            embed.add_field(name="Cost", value=card_data["cost"], inline=True)
-        if card_data.get("score"):
-            embed.add_field(name="Score", value=card_data["score"], inline=True)
-
-        # key -> emoji_name mapping based on user request
-        # Used for heart stats and ability text replacement
-        emoji_map = {
-            "heart01": "heart01",  # Pink
-            "heart02": "heart02",  # Red
-            "heart03": "heart03",  # Yellow
-            "heart04": "heart04",  # Green
-            "heart05": "heart05",  # Blue
-            "heart06": "heart06",  # Purple
-            "heart0": "heart00",  # Grey
-            "ALL1": "sp_all",  # All (Blade Heart generic)
-            # Blade Hearts specific mappings (b_heart0X)
-            "b_heart01": "blade_heart01",
-            "b_heart02": "blade_heart02",
-            "b_heart03": "blade_heart03",
-            "b_heart04": "blade_heart04",
-            "b_heart05": "blade_heart05",
-            "b_heart06": "blade_heart06",
-            "ALL": "sp_all",  # Possible variation
-            # Special hearts
-            "ドロー": "sp_draw",
-            "スコア": "sp_score",
-        }
-
-        # Helper to format hearts with emojis
-        def format_hearts(hearts_data: dict[str, str]) -> str:
-            parts = []
-            for key, amount in hearts_data.items():
-                emoji_name = emoji_map.get(key, key)
-                # Try to find the emoji by name in the bot's cache
-                emoji = discord.utils.get(self.bot.emojis, name=emoji_name)
-
-                display_emoji = str(emoji) if emoji else f":{emoji_name}:"
-                parts.append(f"{display_emoji} {amount}")
-
-            return "   ".join(parts)
-
-        # Re-ordering to match the screenshot: Required First, then Blade Heart
-
-        # Required Hearts
-        if card_data.get("required_hearts") and isinstance(card_data["required_hearts"], dict):
-            text = format_hearts(card_data["required_hearts"])
-            embed.add_field(name="Required Hearts", value=text, inline=False)
-
-        # Merge Blade Hearts (dict) and Special Hearts (string)
-        blade_hearts_parts = []
-
-        # 1. Process Blade Hearts dict
-        if card_data.get("blade_hearts") and isinstance(card_data["blade_hearts"], dict):
-            blade_hearts_parts.append(format_hearts(card_data["blade_hearts"]))
-
-        # 2. Process Special Hearts string
-        special_hearts_str = card_data.get("special_hearts")
-        if special_hearts_str:
-            # Check if we have an emoji mapping
-            emoji_name = emoji_map.get(special_hearts_str)
-            if emoji_name:
-                emoji = discord.utils.get(self.bot.emojis, name=emoji_name)
-                display_val = str(emoji) if emoji else f":{emoji_name}:"
-                blade_hearts_parts.append(display_val)
-            else:
-                # Fallback to just text if no mapping
-                blade_hearts_parts.append(special_hearts_str)
-
-        # Combine and display if any exist
-        if blade_hearts_parts:
-            combined_text = "   ".join(blade_hearts_parts)
-            embed.add_field(name="Blade Heart", value=combined_text, inline=False)
-
-        # Just in case 'hearts' is used for something else or as a fallback
-        if card_data.get("hearts") and isinstance(card_data["hearts"], dict):
-            text = format_hearts(card_data["hearts"])
-            embed.add_field(name="Hearts", value=text, inline=False)
-
-        # Add Ability Text
-        info_text = card_data.get("info_text")
-        if info_text:
-            text = "\n".join(info_text)
-
-            # Replace keywords with emojis in the text
-            # We use a regex with a callback to do this in a single pass,
-            # which prevents "oops" where heart0 matches inside an already replaced heart01 tag.
-            import re
-
-            # Sort keys by length descending to ensure longer matches take precedence in the regex
-            sorted_keys = sorted(emoji_map.keys(), key=len, reverse=True)
-            pattern = re.compile("|".join(re.escape(k) for k in sorted_keys))
-
-            def emoji_replacer(match):
-                key = match.group(0)
-                emoji_name = emoji_map[key]
-                emoji = discord.utils.get(self.bot.emojis, name=emoji_name)
-                return str(emoji) if emoji else f":{emoji_name}:"
-
-            text = pattern.sub(emoji_replacer, text)
-
-            # Discord field value limit is 1024 chars
-            if len(text) > 1024:
-                text = text[:1021] + "..."
-            embed.add_field(name="Ability", value=text, inline=False)
-
-        # Footer
-        embed.set_footer(text=f"ID: {card_data['card_number']}")
-
-        await interaction.followup.send(embed=embed)

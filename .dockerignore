@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Data & Config (Should be mounted or provided separately)
+config.json
+data/card_data.json
+data/images/*
+!data/images/.gitkeep
+
+# Project
+.git/
+.dockerignore
+Dockerfile
+.gemini/
+.agent/
+.vscode/
+
+# Build
+dist/
+build/
+*.egg-info/
