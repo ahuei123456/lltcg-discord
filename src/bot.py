@@ -7,6 +7,7 @@ from discord.ext import commands
 
 from src import config
 from src.cogs.card_lookup import CardLookup
+from src.cogs.card_search import CardSearch
 from src.db.card_repository import CardRepository
 
 _log = logging.getLogger(__name__)
@@ -27,6 +28,7 @@ class LLTCGBot(commands.Bot):
 
         # Load Cogs
         await self.add_cog(CardLookup(self, card_repo))
+        await self.add_cog(CardSearch(self, card_repo))
 
         _log.info("Initial data loaded and Cog added.")
 
