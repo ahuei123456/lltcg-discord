@@ -5,9 +5,9 @@ A utility bot for LLOCG data
 
 To run the bot, use the following command:
 
+```
 uv run python -m src.main
 ```
-
 ## Commands
 
 ### `/card`
