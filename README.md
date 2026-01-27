@@ -36,8 +36,30 @@ Create a `config.json` file in the root directory:
 {
     "DISCORD_TOKEN": "your_bot_token",
     "GUILDS": [1234567890],
-    "CARD_DATA_PATH": "data/card_data.json"
+    "CARD_DATA_PATH": "data/card_data.json",
+    "IMAGE_CACHE_PATH": "data/images"
 }
+```
+
+## Deployment
+
+The bot is containerized with Docker for easy deployment to AWS Lightsail or any other VPS.
+
+Detailed instructions can be found in [deployment.md](docs/deployment.md).
+
+Quick start (Linux/macOS):
+```bash
+chmod +x scripts/deploy.sh
+./scripts/deploy.sh
+```
+
+## Testing
+
+This project uses `pytest` for unit testing, specifically for the emoji mapping and card lookup logic.
+
+Run tests:
+```bash
+uv run pytest
 ```
 
 ## Development

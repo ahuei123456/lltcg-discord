@@ -24,9 +24,10 @@
 - **Lookup Cog** (`src/cogs/card_lookup.py`):
     - Implements `/card` slash command.
     - **Refactor**: Split into modular helpers (`_build_card_embed`, `_get_or_download_image`, `_apply_ability_emojis`) for better maintainability.
-    - Handles autocomplete (Series/Product/Rarity) and validation.
-    - **Visuals**: Features a rich emoji system for required/blade hearts.
-    - **Logic**: Uses single-pass regex replacement in ability text to swap keywords for emojis without nesting errors.
+    - **Image Handling**: Automatically downloads and caches card images locally to `IMAGE_CACHE_PATH`.
+    - **Emoji Logic**: Uses a single-pass regex to replace keywords in ability text.
+        - **Literal Matches**: Bracketed terms like `[桃ブレード]` (Japanese colors).
+        - **Boundary Matches**: Keywords like `E`, `ブレード`, `ハート`, and `ALLブレード` only match when surrounded by spaces (standalone icons).
     - **Refinement**: Merges `blade_hearts` (dict) and `special_hearts` (string) into a single unified display.
 
 ## Configuration
@@ -37,7 +38,13 @@
     - `CARD_DATA_PATH`: Path to the JSON data file.
     - `IMAGE_CACHE_PATH`: Directory for locally cached card images.
 
+## Deployment
+- **Containerization**: Docker multi-stage build using `uv` for minimal image size.
+- **Automation**: `scripts/deploy.sh` handles pulling code, building, and replacing the container.
+- **Hosting**: Optimized for AWS Lightsail (Ubuntu) with volumes for `config.json`, `card_data.json`, and the image cache.
+
 ## Development Workflow
 - **Linting**: `uv run ruff check . --fix`
 - **Type Checking**: `uv run mypy .`
+- **Testing**: `uv run pytest` (Comprehensive suite for emoji logic in `tests/`).
 - **Pre-commit**: `uv run pre-commit run --all-files` (Runs both ruff and mypy).
