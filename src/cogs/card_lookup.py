@@ -67,21 +67,21 @@ class CardLookup(commands.Cog):
             # Ensure URL is properly encoded for Discord
             # We only want to quote the path part, but specific characters like ! need encoding
             from urllib.parse import quote
-
-            url = card_data["img_url"]
-            # Split protocol
-            if "://" in url:
+        # URL encoding for potentially sensitive characters (like '!')
+        url = card_data.get("img_url")
+        if url:
+            try:
+                # Split protocol
                 proto, rest = url.split("://", 1)
-                # Split path from domain - this is a simple heuristic
-                # Assuming standard format https://domain.com/path/file.png
+                # Split path from domain
                 parts = rest.split("/", 1)
                 if len(parts) == 2:
                     domain, path = parts
-                    # safe parameters: characters that should NOT be encoded.
-                    # standard is '/', usually we want to encode everything else including '!'
-                    # UPDATE: '!' seems to break some image servers if encoded, so we keep it safe.
+                    # Keep '!' safe as it seems required/standard for these card URLs
                     encoded_path = quote(path, safe="/:?=&!")
                     url = f"{proto}://{domain}/{encoded_path}"
+            except Exception as e:
+                _log.error(f"Error encoding URL {url}: {e}")
 
             embed.set_image(url=url)
 
