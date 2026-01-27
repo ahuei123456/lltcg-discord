@@ -21,6 +21,21 @@ Look up card details by Series, Product, Number, and Rarity.
 - **number**: Card Number (e.g., `32`) - *Integer input (auto-padded to 3 digits)*
 - **rarity**: Rarity (e.g., `L+`) - *Autocomplete enabled*
 
+### `/search`
+Quickly find cards using specific filters.
+**Usage**: `/search query:love live` or `/search character:Honoka`
+- Requires at least one argument.
+- If no arguments are provided, prompts to use `/advanced_search`.
+
+### `/advanced_search`
+Opens the interactive **Advanced Search Dashboard**.
+- **Features**:
+    - Filter by Card Type (Member/Live).
+    - Numeric ranges for Cost and Blades.
+    - Complex Heart requirements (e.g., "Any 2 Pink Hearts").
+    - Blade Heart matching (OR logic).
+    - Pagination for large result sets.
+
 ## Features
 
 - **Rich Embeds**: Visual card data including images, cost, score, unit, and group.

@@ -29,6 +29,13 @@
         - **Literal Matches**: Bracketed terms like `[桃ブレード]` (Japanese colors).
         - **Boundary Matches**: Keywords like `E`, `ブレード`, `ハート`, and `ALLブレード` only match when surrounded by spaces (standalone icons).
     - **Refinement**: Merges `blade_hearts` (dict) and `special_hearts` (string) into a single unified display.
+- **Search Cog** (`src/cogs/card_search.py`):
+    - Implements `/search` (legacy args) and `/advanced_search` (Interactive Dashboard).
+    - **Dashboard Views** (`src/cogs/views/`):
+        - `StartSearchView`: Main interface for filtering.
+        - `HeartConfigView`: Sub-view for detailed heart requirements.
+        - `PaginationView`: Handles large result sets with navigation and "Back to Search" capability.
+        - `FilterState`: Manages user session state for filters.
 
 ## Configuration
 - **File**: `config.json` in root.
