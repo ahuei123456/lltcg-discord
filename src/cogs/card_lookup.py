@@ -79,7 +79,8 @@ class CardLookup(commands.Cog):
                     domain, path = parts
                     # safe parameters: characters that should NOT be encoded.
                     # standard is '/', usually we want to encode everything else including '!'
-                    encoded_path = quote(path, safe="/:?=&")
+                    # UPDATE: '!' seems to break some image servers if encoded, so we keep it safe.
+                    encoded_path = quote(path, safe="/:?=&!")
                     url = f"{proto}://{domain}/{encoded_path}"
 
             embed.set_image(url=url)
