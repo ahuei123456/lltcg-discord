@@ -41,6 +41,18 @@ class CardLookup(commands.Cog):
             "ALL": "sp_all",  # Variant
             "ドロー": "sp_draw",
             "スコア": "sp_score",
+            # Japanese blade keywords (literal bracket matches)
+            "[桃ブレード]": "blade_heart01",
+            "[赤ブレード]": "blade_heart02",
+            "[黄ブレード]": "blade_heart03",
+            "[緑ブレード]": "blade_heart04",
+            "[青ブレード]": "blade_heart05",
+            "[紫ブレード]": "blade_heart06",
+            # Keywords requiring boundaries (standalone icons)
+            "ALLブレード": "sp_all",
+            "ハート": "icon_all",
+            "E": "icon_energy",
+            "ブレード": "icon_blade",
         }
 
     async def _get_or_download_image(
@@ -105,12 +117,28 @@ class CardLookup(commands.Cog):
 
     def _apply_ability_emojis(self, text: str) -> str:
         """Replaces keywords in ability text with emojis using single-pass regex."""
-        sorted_keys = sorted(self.emoji_map.keys(), key=len, reverse=True)
-        pattern = re.compile("|".join(re.escape(k) for k in sorted_keys))
+        # Keys that should be matched literally (typically bracketed terms)
+        literal_keys = [k for k in self.emoji_map if k.startswith("[")]
+        # Keys that require space (or start/end of line) boundaries
+        boundary_keys = [k for k in self.emoji_map if k not in literal_keys]
+
+        # Sort by length descending to match longest first
+        sorted_literal = sorted(literal_keys, key=len, reverse=True)
+        sorted_boundary = sorted(boundary_keys, key=len, reverse=True)
+
+        patterns = []
+        if sorted_literal:
+            patterns.append("|".join(re.escape(k) for k in sorted_literal))
+        if sorted_boundary:
+            # Use lookarounds to ensure boundaries: not preceded/followed by non-whitespace
+            patterns.append("|".join(f"(?<!\\S){re.escape(k)}(?!\\S)" for k in sorted_boundary))
+
+        pattern = re.compile("|".join(patterns))
 
         def emoji_replacer(match):
             key = match.group(0)
             emoji_name = self.emoji_map[key]
+            # Try to get emoji from cache, fallback to string
             emoji = discord.utils.get(self.bot.emojis, name=emoji_name)
             return str(emoji) if emoji else f":{emoji_name}:"
 
