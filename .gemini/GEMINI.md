@@ -24,7 +24,9 @@
 - **Lookup Cog** (`src/cogs/card_lookup.py`):
     - Implements `/card` slash command.
     - Handles autocomplete (Series/Product/Rarity) and validation.
-    - Generates Rich Embeds with handled edge cases (URL encoding, heart stats formatting).
+    - **Visuals**: Features a rich emoji system for required/blade hearts.
+    - **Logic**: Uses single-pass regex replacement in ability text to swap keywords for emojis without nesting errors.
+    - **Refinement**: Merges `blade_hearts` (dict) and `special_hearts` (string) into a single unified display.
 
 ## Configuration
 - **File**: `config.json` in root.

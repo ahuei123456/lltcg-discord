@@ -21,6 +21,13 @@ Look up card details by Series, Product, Number, and Rarity.
 - **number**: Card Number (e.g., `32`) - *Integer input (auto-padded to 3 digits)*
 - **rarity**: Rarity (e.g., `L+`) - *Autocomplete enabled*
 
+## Features
+
+- **Rich Embeds**: Visual card data including images, cost, score, unit, and group.
+- **Emoji System**: Automatic mapping of heart symbols in stats and ability text.
+- **Optimized Search**: Pre-sorted indices for lightning-fast autocomplete.
+- **Smart ID Handling**: Fullwidth character normalization and auto-padding for card numbers.
+
 ## Configuration
 
 Create a `config.json` file in the root directory:
