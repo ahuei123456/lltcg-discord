@@ -20,7 +20,8 @@ sudo apt update && sudo apt upgrade -y
 curl -fsSL https://get.docker.com -o get-docker.sh
 sudo sh get-docker.sh
 sudo usermod -aG docker $USER
-# Log out and log back in for group changes to take effect!
+# IMPORTANT: Run this to apply group changes without logging out
+newgrp docker
 ```
 
 ## 3. Deployment Steps
