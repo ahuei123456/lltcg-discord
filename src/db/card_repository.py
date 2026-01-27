@@ -22,6 +22,7 @@ class CardData(TypedDict):
     hearts: dict[str, str] | None
     required_hearts: dict[str, str] | None
     blade_hearts: dict[str, str] | None
+    special_hearts: str | None
     info_text: list[str] | None
 
 

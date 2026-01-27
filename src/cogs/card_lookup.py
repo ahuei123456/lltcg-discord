@@ -100,23 +100,102 @@ class CardLookup(commands.Cog):
         if card_data.get("score"):
             embed.add_field(name="Score", value=card_data["score"], inline=True)
 
-        # Add hearts info if present
-        hearts_info = []
-        if card_data.get("hearts") and isinstance(card_data["hearts"], dict):
-            formatted = ", ".join([f"{k}: {v}" for k, v in card_data["hearts"].items()])
-            hearts_info.append(f"Hearts: {formatted}")
+        # key -> emoji_name mapping based on user request
+        # Used for heart stats and ability text replacement
+        emoji_map = {
+            "heart01": "heart01",  # Pink
+            "heart02": "heart02",  # Red
+            "heart03": "heart03",  # Yellow
+            "heart04": "heart04",  # Green
+            "heart05": "heart05",  # Blue
+            "heart06": "heart06",  # Purple
+            "heart0": "heart00",  # Grey
+            "ALL1": "sp_all",  # All (Blade Heart generic)
+            # Blade Hearts specific mappings (b_heart0X)
+            "b_heart01": "blade_heart01",
+            "b_heart02": "blade_heart02",
+            "b_heart03": "blade_heart03",
+            "b_heart04": "blade_heart04",
+            "b_heart05": "blade_heart05",
+            "b_heart06": "blade_heart06",
+            "ALL": "sp_all",  # Possible variation
+            # Special hearts
+            "ドロー": "sp_draw",
+            "スコア": "sp_score",
+        }
 
+        # Helper to format hearts with emojis
+        def format_hearts(hearts_data: dict[str, str]) -> str:
+            parts = []
+            for key, amount in hearts_data.items():
+                emoji_name = emoji_map.get(key, key)
+                # Try to find the emoji by name in the bot's cache
+                emoji = discord.utils.get(self.bot.emojis, name=emoji_name)
+
+                display_emoji = str(emoji) if emoji else f":{emoji_name}:"
+                parts.append(f"{display_emoji} {amount}")
+
+            return "   ".join(parts)
+
+        # Re-ordering to match the screenshot: Required First, then Blade Heart
+
+        # Required Hearts
         if card_data.get("required_hearts") and isinstance(card_data["required_hearts"], dict):
-            formatted = ", ".join([f"{k}: {v}" for k, v in card_data["required_hearts"].items()])
-            hearts_info.append(f"Req. Hearts: {formatted}")
+            text = format_hearts(card_data["required_hearts"])
+            embed.add_field(name="Required Hearts", value=text, inline=False)
 
-        if hearts_info:
-            embed.add_field(name="Heart Stats", value="\n".join(hearts_info), inline=False)
+        # Merge Blade Hearts (dict) and Special Hearts (string)
+        blade_hearts_parts = []
+
+        # 1. Process Blade Hearts dict
+        if card_data.get("blade_hearts") and isinstance(card_data["blade_hearts"], dict):
+            blade_hearts_parts.append(format_hearts(card_data["blade_hearts"]))
+
+        # 2. Process Special Hearts string
+        special_hearts_str = card_data.get("special_hearts")
+        if special_hearts_str:
+            # Check if we have an emoji mapping
+            emoji_name = emoji_map.get(special_hearts_str)
+            if emoji_name:
+                emoji = discord.utils.get(self.bot.emojis, name=emoji_name)
+                display_val = str(emoji) if emoji else f":{emoji_name}:"
+                blade_hearts_parts.append(display_val)
+            else:
+                # Fallback to just text if no mapping
+                blade_hearts_parts.append(special_hearts_str)
+
+        # Combine and display if any exist
+        if blade_hearts_parts:
+            combined_text = "   ".join(blade_hearts_parts)
+            embed.add_field(name="Blade Heart", value=combined_text, inline=False)
+
+        # Just in case 'hearts' is used for something else or as a fallback
+        if card_data.get("hearts") and isinstance(card_data["hearts"], dict):
+            text = format_hearts(card_data["hearts"])
+            embed.add_field(name="Hearts", value=text, inline=False)
 
         # Add Ability Text
         info_text = card_data.get("info_text")
         if info_text:
             text = "\n".join(info_text)
+
+            # Replace keywords with emojis in the text
+            # We use a regex with a callback to do this in a single pass,
+            # which prevents "oops" where heart0 matches inside an already replaced heart01 tag.
+            import re
+
+            # Sort keys by length descending to ensure longer matches take precedence in the regex
+            sorted_keys = sorted(emoji_map.keys(), key=len, reverse=True)
+            pattern = re.compile("|".join(re.escape(k) for k in sorted_keys))
+
+            def emoji_replacer(match):
+                key = match.group(0)
+                emoji_name = emoji_map[key]
+                emoji = discord.utils.get(self.bot.emojis, name=emoji_name)
+                return str(emoji) if emoji else f":{emoji_name}:"
+
+            text = pattern.sub(emoji_replacer, text)
+
             # Discord field value limit is 1024 chars
             if len(text) > 1024:
                 text = text[:1021] + "..."
