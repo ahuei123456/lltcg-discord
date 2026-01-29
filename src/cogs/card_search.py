@@ -90,7 +90,7 @@ class CardSearch(commands.Cog):
         # 1. Characters (REVERSE_CHAR_MAP: Japanese -> English)
         for jp_val, en_name in REVERSE_CHAR_MAP.items():
             if current_lower in en_name.lower():
-                matches.append(app_commands.Choice(name=f"Char: {en_name}", value=jp_val))
+                matches.append(app_commands.Choice(name=f"Char: {en_name} ({jp_val})", value=jp_val))
 
         # 2. Units (UNIT_MAP: English -> Japanese)
         for en_name, jp_val in UNIT_MAP.items():

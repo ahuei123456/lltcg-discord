@@ -20,8 +20,8 @@ async def test_keyword_autocomplete_character(search_cog):
     interaction = MagicMock()
     choices = await search_cog.keyword_autocomplete(interaction, "Honoka")
 
-    # Expect "Char: Kousaka Honoka" -> value "高坂穂乃果"
-    found = any("Honoka" in c.name and c.value == "高坂穂乃果" for c in choices)
+    # Expect "Char: Honoka (高坂穂乃果)" -> value "高坂穂乃果"
+    found = any(f"Char: Honoka ({c.value})" == c.name and c.value == "高坂穂乃果" for c in choices)
     assert found
 
 

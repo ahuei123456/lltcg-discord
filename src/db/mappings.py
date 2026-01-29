@@ -120,11 +120,6 @@ GROUP_MAP = {
     "nijigasaki": "ラブライブ！虹ヶ咲学園スクールアイドル同好会",
     "aqours": "ラブライブ！サンシャイン!!",  # Assuming standard group naming convention in DB
     "liella": "ラブライブ！スーパースター!!",
-    # The snippet didn't show Hasunosora group name.
-    # Assuming '蓮ノ空女学院スクールアイドルクラブ' based on standard usage but DB might differ.
-    # I will stick to what seems standard based on 'Nijigasaki' example.
-    # UPDATE: User provided snippet ID: 1208 shows "蓮ノ空女学院スクールアイドルクラブ"
-    "hasu": "蓮ノ空女学院スクールアイドルクラブ",
     "hasunosora": "蓮ノ空女学院スクールアイドルクラブ",
     "mus": "ラブライブ！",
     "mu's": "ラブライブ！",
