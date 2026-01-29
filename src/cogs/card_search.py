@@ -1,11 +1,15 @@
 import logging
+from collections.abc import Callable
+from typing import Any
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
 from src.db.card_repository import CardData, CardRepository
-from src.db.mappings import CHARACTER_MAP, GROUP_MAP, REVERSE_CHAR_MAP, UNIT_MAP
+from src.db.mappings import GROUP_MAP, REVERSE_CHAR_MAP, UNIT_MAP
+from src.utils.errors import InvalidLookupArgsError
+from src.utils.parsing import parse_range_string
 
 from .views.pagination_view import PaginationView
 from .views.start_search_view import StartSearchView
@@ -13,233 +17,251 @@ from .views.state import FilterState
 
 _log = logging.getLogger(__name__)
 
+COLOR_MAP = {
+    "Pink": "heart01",
+    "Red": "heart02",
+    "Yellow": "heart03",
+    "Green": "heart04",
+    "Blue": "heart05",
+    "Purple": "heart06",
+}
+
 
 class CardSearch(commands.Cog):
     def __init__(self, bot: commands.Bot, card_repo: CardRepository):
         self.bot = bot
         self.card_repo = card_repo
 
-    async def handle_advanced_search(self, interaction: discord.Interaction, filters: FilterState):
-        """Callback for the Advanced Search Dashboard."""
-        # Convert state to repo filters
-        filter_dict = filters.to_dict()
-
-        # Execute search
-        results = self.card_repo.search_cards(filters=filter_dict)
+    async def _display_results(
+        self,
+        interaction: discord.Interaction,
+        results: list[CardData],
+        filters_desc: str,
+        back_callback: Callable | None = None,
+    ):
+        """Helper to display search results using PaginationView."""
         count = len(results)
         title = f"Search Results: {count} found"
-        filters_desc = f"**Filters:**\n{filters.describe_filters()}"
+
+        # Determine color based on results
+        color = discord.Color.red() if count == 0 else discord.Color.green()
+
+        # Even for 0 or small results, we use PaginationView for consistency
+        # (and to support "Back" if provided, though typically disabled for CLI)
+        view = PaginationView(
+            results=results, title=title, filters_desc=filters_desc, color=color, back_callback=back_callback
+        )
+
+        # If interaction was deferred, use edit_original_response
+        if interaction.response.is_done():
+            await interaction.edit_original_response(content=None, embed=view.get_embed(), view=view)
+        else:
+            await interaction.response.send_message(embed=view.get_embed(), view=view)
+
+    async def handle_advanced_search(self, interaction: discord.Interaction, filters: FilterState):
+        """Callback for the Advanced Search Dashboard."""
+        filter_dict = filters.to_dict()
+        results = self.card_repo.search_cards(filters=filter_dict)
 
         async def back_to_search_callback(intr: discord.Interaction):
-            # Re-launch StartSearchView with current filters
             view = StartSearchView(callback=self.handle_advanced_search, initial_state=filters)
-            # Edit original message to show dashboard
             await intr.response.edit_message(content="Advanced Search Dashboard", embed=None, view=view)
 
-        if count > 10:
-            # Use Pagination View
-            view = PaginationView(
-                results=results,
-                title=title,
-                filters_desc=filters_desc,
-                color=discord.Color.green(),
-                back_callback=back_to_search_callback,
-            )
-            # The search button callback already deferred/edited via response.edit_message.
-            # So here we must use edit_original_response.
-            await interaction.edit_original_response(content=None, embed=view.get_embed(), view=view)
-            return
-
-        # <= 10 results, standard display (but with back button?)
-        # StartSearchView doesn't have a "Back" button on the embedding itself if we just send an embed.
-        # But handle_advanced_search replaces everything.
-        # If we want a "Back" button even for small results, we need a View.
-        # Let's reuse PaginationView even for small results if we want consistency,
-        # or just make a simple View with a Back button.
-        # For uniformity, let's use PaginationView but it will just have 1 page.
-
-        view = PaginationView(
-            results=results,
-            title=title,
-            filters_desc=filters_desc,
-            color=discord.Color.red() if count == 0 else discord.Color.green(),
+        await self._display_results(
+            interaction,
+            results,
+            filters_desc=f"**Filters:**\n{filters.describe_filters()}",
             back_callback=back_to_search_callback,
         )
-        await interaction.edit_original_response(content=None, embed=view.get_embed(), view=view)
 
-    async def character_autocomplete(
+    # --- Autocomplete Solvers ---
+
+    async def keyword_autocomplete(
         self, interaction: discord.Interaction, current: str
     ) -> list[app_commands.Choice[str]]:
         """
-        Autocomplete for character names.
-        Matches 'current' against English names in REVERSE_CHAR_MAP (values).
-        Returns Choice(name="English (Japanese)", value="Japanese").
+        Autocomplete for 'keyword' argument.
+        Matches English input against Characters, Units, and Groups.
+        Returns Japanese values.
         """
         current_lower = current.lower()
         matches = []
-        # REVERSE_CHAR_MAP: Japanese -> English Title
-        # We want to find entries where English Title contains current
-        for jp_name, en_name in REVERSE_CHAR_MAP.items():
+
+        # 1. Characters (REVERSE_CHAR_MAP: Japanese -> English)
+        for jp_val, en_name in REVERSE_CHAR_MAP.items():
             if current_lower in en_name.lower():
-                # Value is now the Japanese name (jp_name) to pass directly to search_cards
-                matches.append(app_commands.Choice(name=f"{en_name} ({jp_name})", value=jp_name))
+                matches.append(app_commands.Choice(name=f"Char: {en_name}", value=jp_val))
 
-        # Sort by length of match for better relevance? Or just alphabetical.
-        matches.sort(key=lambda x: x.name)
-        return matches[:25]
+        # 2. Units (UNIT_MAP: English -> Japanese)
+        for en_name, jp_val in UNIT_MAP.items():
+            if current_lower in en_name.lower():
+                # Use the DB value (jp_val) for display as it is properly capitalized (e.g. "Printemps")
+                matches.append(app_commands.Choice(name=f"Unit: {jp_val}", value=jp_val))
 
-    async def unit_autocomplete(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
-        """
-        Autocomplete for units.
-        Matches 'current' against UNIT_MAP keys (lower case English).
-        """
-        current_lower = current.lower()
-        matches = []
-        for key, val in UNIT_MAP.items():
-            # key is usually lower case English, val is DB Value
-            # We show the DB Value (Clean) as name, AND value
-            if current_lower in key:
-                matches.append(app_commands.Choice(name=val, value=val))
+        # 3. Groups (GROUP_MAP: English -> Japanese)
+        for en_name, jp_val in GROUP_MAP.items():
+            if current_lower in en_name.lower():
+                # Capitalize key for display since value is Japanese
+                matches.append(app_commands.Choice(name=f"Group: {en_name.title()}", value=jp_val))
 
-        # Deduplicate by name if multiple keys map to same unit
-        unique_matches = []
+        # Deduplicate matches by value
         seen = set()
+        unique_matches = []
         for m in matches:
-            if m.name not in seen:
+            if m.value not in seen:
                 unique_matches.append(m)
-                seen.add(m.name)
+                seen.add(m.value)
 
+        # Sort matches (Exact matches first could be nice, currently alphabetical by name label)
+        # Verify limit
         return unique_matches[:25]
-
-    async def group_autocomplete(
-        self, interaction: discord.Interaction, current: str
-    ) -> list[app_commands.Choice[str]]:
-        """
-        Autocomplete for groups.
-        """
-        # Hardcoded list for cleaner UX given the small set
-        # Value is the DB Group Name
-        groups = [
-            ("μ's", "ラブライブ！"),
-            ("Aqours", "ラブライブ！サンシャイン!!"),
-            ("Nijigasaki", "ラブライブ！虹ヶ咲学園スクールアイドル同好会"),
-            ("Liella!", "ラブライブ！スーパースター!!"),
-            ("Hasunosora", "蓮ノ空女学院スクールアイドルクラブ"),
-        ]
-        return [
-            app_commands.Choice(name=name, value=value) for name, value in groups if current.lower() in name.lower()
-        ]
 
     async def rarity_autocomplete(
         self, interaction: discord.Interaction, current: str
     ) -> list[app_commands.Choice[str]]:
-        # Reuse repo search
         matches = self.card_repo.search_rarity(current)
         return [app_commands.Choice(name=val, value=val) for val in matches]
 
-    def _build_search_result_embed(self, results: list[CardData], filters: dict) -> discord.Embed:
-        count = len(results)
-        title = f"Search Results: {count} found"
-
-        # Build filter description
-        filter_text = []
-        if filters.get("query"):
-            filter_text.append(f"Query: `{filters['query']}`")
-        if filters.get("character"):
-            filter_text.append(f"Char: `{filters['character']}`")
-        if filters.get("unit"):
-            filter_text.append(f"Unit: `{filters['unit']}`")
-        if filters.get("group"):
-            filter_text.append(f"Group: `{filters['group']}`")
-        if filters.get("rarity"):
-            filter_text.append(f"Rarity: `{filters['rarity']}`")
-
-        description = "Filters: " + ", ".join(filter_text) + "\n\n"
-
-        if count == 0:
-            description += "No cards found matching the criteria."
-            color = discord.Color.red()
-        else:
-            color = discord.Color.green()
-            # List first 10
-            for i, card in enumerate(results[:10]):
-                name = card.get("name", "Unknown")
-                rarity = card.get("rarity", "?")
-                number = card.get("card_number", "???")
-                # Format: [ID] Name (Rarity)
-                description += f"`{number}` **{name}** ({rarity})\n"
-
-            if count > 10:
-                description += f"\n*...and {count - 10} more.*"
-
-        embed = discord.Embed(title=title, description=description, color=color)
-        return embed
+    # --- Commands ---
 
     @app_commands.command(name="advanced_search", description="Open the Advanced Search Dashboard")
     async def advanced_search(self, interaction: discord.Interaction):
-        """Opens the interactive Advanced Search Dashboard."""
         view = StartSearchView(callback=self.handle_advanced_search)
         await interaction.response.send_message("Launching Advanced Search Dashboard...", view=view, ephemeral=True)
 
-    @app_commands.command(name="search", description="Search for cards with filters")
-    @app_commands.autocomplete(
-        character=character_autocomplete, unit=unit_autocomplete, group=group_autocomplete, rarity=rarity_autocomplete
-    )
+    @app_commands.command(name="search", description="Search for cards. Default: Keyword search.")
     @app_commands.describe(
-        query="Text to search in card name",
-        character="Character Name",
-        unit="Unit Name",
-        group="Group Name",
-        rarity="Rarity",
+        keyword="Search by Name, Unit, or Group",
+        card_type="Member or Live",
+        cost="Cost (e.g. 4, 2-4, 4+, <4)",
+        heart_color="Required heart color filter",
+        heart_count="Count for heart color (e.g. 2, 2+). Ignored if color not set.",
+        blade_heart="Blade Heart Requirement",
+        blades="Unpaid Blades (e.g. 1, 1+)",
+        rarity="Card Rarity",
     )
+    @app_commands.choices(
+        card_type=[
+            app_commands.Choice(name="Member", value="Member"),
+            app_commands.Choice(name="Live", value="Live"),
+        ],
+        heart_color=[app_commands.Choice(name=k, value=k) for k in COLOR_MAP],
+        blade_heart=[
+            app_commands.Choice(name="All", value="ALL"),
+            app_commands.Choice(name="Score", value="Score"),
+            app_commands.Choice(name="Draw", value="Draw"),
+            # Add Colors to Blade Heart choices if desired, or simplified list
+            app_commands.Choice(name="Pink", value="heart01"),
+            app_commands.Choice(name="Red", value="heart02"),
+            app_commands.Choice(name="Yellow", value="heart03"),
+            app_commands.Choice(name="Green", value="heart04"),
+            app_commands.Choice(name="Blue", value="heart05"),
+            app_commands.Choice(name="Purple", value="heart06"),
+        ],
+    )
+    @app_commands.autocomplete(keyword=keyword_autocomplete, rarity=rarity_autocomplete)
     async def search(
         self,
         interaction: discord.Interaction,
-        query: str | None = None,
-        character: str | None = None,
-        unit: str | None = None,
-        group: str | None = None,
+        keyword: str | None = None,
+        card_type: str | None = None,
+        cost: str | None = None,
+        heart_color: str | None = None,
+        heart_count: str | None = None,
+        blade_heart: str | None = None,
+        blades: str | None = None,
         rarity: str | None = None,
     ):
-        # Check if basic search or advanced dashboard
-        if not any([query, character, unit, group, rarity]):
-            await interaction.response.send_message(
-                "Please provide at least one search filter (Query, Character, Unit, etc.).\n"
-                "Use `/advanced_search` to open the interactive dashboard.",
-                ephemeral=True,
-            )
-            return
-
         await interaction.response.defer()
 
-        # Normalize inputs from English to Japanese if possible
-        # This checks if the input is a known English key, and if so converts it.
-        # This handles cases where user types "Honoka" and hits enter without using autocomplete (which sends JP name)
+        filters: dict[str, Any] = {}
 
-        target_char = character
-        if character:
-            # Check if it's in our english map
-            mapped = CHARACTER_MAP.get(character.lower())
-            if mapped:
-                target_char = mapped
+        if keyword:
+            filters["keyword"] = keyword
 
-        target_unit = unit
-        if unit:
-            mapped = UNIT_MAP.get(unit.lower())
-            if mapped:
-                target_unit = mapped
+        if card_type:
+            filters["card_type"] = card_type
 
-        target_group = group
-        if group:
-            mapped = GROUP_MAP.get(group.lower())
-            if mapped:
-                target_group = mapped
+        if rarity:
+            filters["rarity"] = rarity
 
-        results = self.card_repo.search_cards(
-            query=query, character=target_char, unit=target_unit, group=target_group, rarity=rarity
-        )
+        # Parse Cost
+        if cost:
+            min_c, max_c = parse_range_string(cost)
+            if min_c is None and max_c is None:
+                raise InvalidLookupArgsError(f"Invalid cost format: {cost}")
+            if min_c is not None:
+                filters["cost_min"] = min_c
+            if max_c is not None:
+                filters["cost_max"] = max_c
 
-        filters = {"query": query, "character": character, "unit": unit, "group": group, "rarity": rarity}
+        # Parse Blades
+        if blades:
+            min_b, max_b = parse_range_string(blades)
+            if min_b is None and max_b is None:
+                raise InvalidLookupArgsError(f"Invalid blades format: {blades}")
+            if min_b is not None:
+                filters["blades_min"] = min_b
+            if max_b is not None:
+                filters["blades_max"] = max_b
 
-        embed = self._build_search_result_embed(results, filters)
-        await interaction.followup.send(embed=embed)
+        # Heart Logic
+        if heart_color:
+            # Map "Pink" -> "heart01"
+            db_key = COLOR_MAP.get(heart_color)
+            if db_key:
+                val_expr = heart_count if heart_count else "1"  # Default to 1 if no count provided? Or 1+?
+                filters.setdefault("hearts", {})[db_key] = val_expr
+        elif heart_count:
+            # Warning: heart_count ignored without color
+            # We could send a ephemeral warning but we are deferred?
+            # Ideally just ignore or append to description.
+            pass
+
+        # Blade Heart Logic
+        if blade_heart:
+            # If "ALL", "Score", "Draw" -> simple map
+            # If "Pink" -> "heart01"
+            # DB keys: "ALL1", "Score", "Draw" (requires mapping from "Score" -> "Score"?)
+
+            # Helper map for blade hearts specifically (or reuse state logic)
+            # Standardizing:
+            if blade_heart == "ALL":
+                filters["blade_hearts"] = ["ALL1", "ALL2"]  # Search both generic alls?
+            elif blade_heart == "Score":
+                filters["blade_hearts"] = ["Score"]
+            elif blade_heart == "Draw":
+                filters["blade_hearts"] = ["Draw"]
+            else:
+                # It's a color key from choices (e.g. heart01) or a color name?
+                # Choices used values like heart01.
+                filters["blade_hearts"] = [blade_heart]
+
+        # Prepare filters
+        filters["keyword"] = keyword
+        filters["card_type"] = card_type
+        # ... logic above already populates filters dict ...
+
+        # filters variable is already accurate from above logic
+        results = self.card_repo.search_cards(filters=filters)
+
+        # Describe filters for display
+        desc_parts = []
+        if keyword:
+            desc_parts.append(f"Keyword: `{keyword}`")
+        if card_type:
+            desc_parts.append(f"Type: `{card_type}`")
+        if cost:
+            desc_parts.append(f"Cost: `{cost}`")
+        if heart_color:
+            desc_parts.append(f"Heart: `{heart_color}` ({heart_count or '1'})")
+        if blade_heart:
+            desc_parts.append(f"Blade Heart: `{blade_heart}`")
+        if blades:
+            desc_parts.append(f"Blades: `{blades}`")
+        if rarity:
+            desc_parts.append(f"Rarity: `{rarity}`")
+
+        filters_desc = "**Filters:**\n" + ", ".join(desc_parts)
+
+        await self._display_results(interaction, results, filters_desc)

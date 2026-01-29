@@ -329,3 +329,49 @@ def test_search_specific_sumire(repo_real_names):
     # Check if the specific card is found by ID or Name
     found = any(c["card_number"] == "PL!SP-bp4-015-N" for c in results)
     assert found, "Detailed Sumire card not found with specific filters"
+
+
+def test_search_keyword_name(repo_real_names):
+    # Keyword "Honoka" should match "高坂穂乃果" (Wait, keyword logic doesn't use Char Map automatically in repo!)
+    # Repo 'keyword' logic is: lower(kw) in name/unit/group strings.
+    # The MAPPING logic is inside the COG.
+    # So here we test "raw" matching.
+    # If I verify Repo, I should use Japanese for matches unless the data is English.
+    # The fixture names are Japanese.
+
+    # "高坂" (Kosaka) in "高坂穂乃果"
+    results = repo_real_names.search_cards(filters={"keyword": "高坂"})
+    assert len(results) >= 1
+    assert results[0]["name"] == "高坂穂乃果"
+
+
+def test_search_keyword_unit(repo_real_names):
+    # "Printemps" is in unit field
+    results = repo_real_names.search_cards(filters={"keyword": "Printe"})
+    assert len(results) >= 1
+    assert any(c["unit"] == "Printemps" for c in results)
+
+
+def test_search_keyword_group(repo_real_names):
+    # "aqours" in group list?
+    # Fixture data group: ["ラブライブ！サンシャイン!!"]
+    # So "aqours" won't match unless the group list has it.
+    # The fixture uses valid DB values. "aqours" is not in there.
+    # I should search for "サンシャイン"
+    results = repo_real_names.search_cards(filters={"keyword": "サンシャイン"})
+    assert len(results) >= 1
+    assert any("ラブライブ！サンシャイン!!" in c["group"] for c in results)
+
+
+def test_search_hearts_range(repo_real_names):
+    # Heart01 "2+" -> Honoka has 2.
+    results = repo_real_names.search_cards(filters={"hearts": {"heart01": "2+"}})
+    assert any(c["name"] == "高坂穂乃果" for c in results)
+
+    # Heart01 ">2" -> Honoka has 2 (should fail)
+    results_strict = repo_real_names.search_cards(filters={"hearts": {"heart01": ">2"}})
+    # Awesome Live has 3, so it might match if it matches heart01
+    # Awesome Live: hearts: None, req: heart01:3. Total=3.
+    # So Awesome Live matches >2.
+    assert any(c["name"] == "Awesome Live" for c in results_strict)
+    assert not any(c["name"] == "高坂穂乃果" for c in results_strict)

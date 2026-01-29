@@ -3,6 +3,8 @@ import logging
 from dataclasses import dataclass
 from typing import Optional, TypedDict
 
+from src.utils.parsing import parse_range_string
+
 _log = logging.getLogger(__name__)
 
 
@@ -198,6 +200,7 @@ class CardRepository:
         f_query = filters.get("query")  # Legacy Name-only search
 
         f_text_query = filters.get("text_query")  # Advanced Text search (Name + Info)
+        f_keyword = filters.get("keyword")  # General Keyword search (Name/Unit/Group)
 
         _log.info(f"Searching cards with filters: {filters}")
         f_card_number = filters.get("card_number")
@@ -220,6 +223,18 @@ class CardRepository:
             # --- 1. Basic String Filters ---
             if f_rarity and card.get("rarity") != f_rarity:
                 continue
+
+            # Keyword Search (Name OR Unit OR Group)
+            if f_keyword:
+                kw = f_keyword.lower()
+                c_name = card.get("name", "").lower()
+                c_unit = (card.get("unit") or "").lower()
+                c_group = [g.lower() for g in card.get("group", [])]
+
+                # Check if keyword is in any valid field
+                matched_keyword = kw in c_name or kw in c_unit or any(kw in g for g in c_group)
+                if not matched_keyword:
+                    continue
 
             # Character (Name segment) - Normalized
             if f_char:
@@ -287,32 +302,37 @@ class CardRepository:
 
             # Hearts Logic
             # "hearts" field in DB for Members (Base Hearts). "required_hearts" for Lives.
-            # "hearts" filter keys: {'heart01': 2} means "At least 2 Pink".
-            # We check BOTH `hearts` and `required_hearts` fields on the card.
+            # "hearts" mechanism checks if card has the required amount of hearts of a specific color.
             if f_hearts:
                 card_hearts = card.get("hearts") or {}
                 card_req_hearts = card.get("required_hearts") or {}
-                # Merge for checking? Or check availability?
-                # Usually filter means "Show cards that HAVE this heart config".
-                # For member: "hearts" = cost validation?
-                # DB structure: "hearts": {"heart01": "2"}
 
                 match_failed = False
-                for color_key, req_val_expr in f_hearts.items():
-                    # req_val_expr e.g. ">=1" (from UI?) or just int 1?
-                    # Let's assume input is simple int for "At least X"
-                    # User UI: Click "2" -> means "Cards with 2 or more of this color"
+                for color_key, val_expr in f_hearts.items():
+                    # val_expr can be int (legacy) or str range (e.g. "2+")
+                    min_v, max_v = None, None
 
-                    req_min = int(req_val_expr)  # Assuming simple int value passed
+                    if isinstance(val_expr, int):
+                        min_v = val_expr
+                    else:
+                        min_v, max_v = parse_range_string(str(val_expr))
 
-                    # Check both fields
-                    val_c = int(card_hearts.get(color_key, "0"))
-                    val_r = int(card_req_hearts.get(color_key, "0"))
+                    # Calculate total hearts on card for this color
+                    try:
+                        val_c = int(card_hearts.get(color_key, "0"))
+                        val_r = int(card_req_hearts.get(color_key, "0"))
+                    except ValueError:
+                        val_c, val_r = 0, 0
+
                     total_card_val = val_c + val_r
 
-                    if total_card_val < req_min:
+                    if min_v is not None and total_card_val < min_v:
                         match_failed = True
                         break
+                    if max_v is not None and total_card_val > max_v:
+                        match_failed = True
+                        break
+
                 if match_failed:
                     continue
 

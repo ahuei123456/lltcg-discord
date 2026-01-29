@@ -29,8 +29,14 @@
         - **Literal Matches**: Bracketed terms like `[桃ブレード]` (Japanese colors).
         - **Boundary Matches**: Keywords like `E`, `ブレード`, `ハート`, and `ALLブレード` only match when surrounded by spaces (standalone icons).
     - **Refinement**: Merges `blade_hearts` (dict) and `special_hearts` (string) into a single unified display.
+- **Parsing Utility** (`src/utils/parsing.py`):
+    - Handles text-to-range conversion for filters (e.g., "2-4" -> `(2, 4)`, "4+" -> `(4, None)`).
 - **Search Cog** (`src/cogs/card_search.py`):
-    - Implements `/search` (legacy args) and `/advanced_search` (Interactive Dashboard).
+    - Implements `/search` (Enhanced CLI with Autocomplete) and `/advanced_search` (Interactive Dashboard).
+    - **Features**:
+        - **Combined Keyword Search**: Single field checks Name, Unit, and Group.
+        - **Range Parsing**: Integrated with `parsing.py` for flexible numerical inputs.
+        - **Unified Display**: Uses `PaginationView` for consistent result rendering across CLI and Dashboard.
     - **Dashboard Views** (`src/cogs/views/`):
         - `StartSearchView`: Main interface for filtering.
         - `HeartConfigView`: Sub-view for detailed heart requirements.
@@ -55,3 +61,9 @@
 - **Type Checking**: `uv run mypy .`
 - **Testing**: `uv run pytest` (Comprehensive suite for emoji logic in `tests/`).
 - **Pre-commit**: `uv run pre-commit run --all-files` (Runs both ruff and mypy).
+
+### Strict Rules
+> [!IMPORTANT]
+> **ALWAYS** run the following commands at the end of every task and ensure **BOTH** return no errors before considering the task complete:
+> 1. `uv run ruff check . --fix`
+> 2. `uv run mypy .`

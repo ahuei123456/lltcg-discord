@@ -3,12 +3,14 @@ import logging
 import sys
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 
 from src import config
 from src.cogs.card_lookup import CardLookup
 from src.cogs.card_search import CardSearch
 from src.db.card_repository import CardRepository
+from src.utils.errors import BotCommandError
 
 _log = logging.getLogger(__name__)
 
@@ -43,6 +45,47 @@ class LLTCGBot(commands.Bot):
 
 
 client = LLTCGBot()
+
+
+@client.tree.error
+async def on_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    """Handles application command errors globally."""
+    user_info = f"User: {interaction.user} ({interaction.user.id})"
+    command_name = interaction.command.name if interaction.command else "Unknown"
+
+    # Unwrap original error if present
+    original_error = getattr(error, "original", error)
+    message = ""
+
+    match original_error:
+        case BotCommandError() as e:
+            message = str(e)
+            log_level = getattr(e, "log_level", logging.INFO)
+            _log.log(log_level, f"{user_info} - Handled ({type(e).__name__}): {message}")
+
+        case app_commands.CheckFailure():
+            message = "❌ You do not have permission to use this command."
+            _log.warning(f"{user_info} - CheckFailure for command '{command_name}'.")
+
+        case discord.Forbidden():
+            message = "❌ The bot lacks permissions to perform this action."
+            _log.warning(f"{user_info} - Forbidden for command '{command_name}'.")
+
+        case _:
+            _log.error(
+                f"{user_info} - Unhandled command error for '{command_name}': {error}",
+                exc_info=original_error,
+            )
+            message = "❌ An unexpected error occurred. Please try again later."
+
+    if message:
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(message, ephemeral=True)
+            else:
+                await interaction.followup.send(message, ephemeral=True)
+        except Exception as e:
+            _log.error(f"Failed to send error response: {e}")
 
 
 def parse_args() -> argparse.Namespace:

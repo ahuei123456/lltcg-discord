@@ -22,10 +22,23 @@ Look up card details by Series, Product, Number, and Rarity.
 - **rarity**: Rarity (e.g., `L+`) - *Autocomplete enabled*
 
 ### `/search`
-Quickly find cards using specific filters.
-**Usage**: `/search query:love live` or `/search character:Honoka`
-- Requires at least one argument.
-- If no arguments are provided, prompts to use `/advanced_search`.
+Quickly find cards using specific filters directly from the chat.
+
+**Arguments**:
+- `keyword`: Searches Name, Unit, and Group (OR logic). *Autocomplete enabled*.
+- `cost`: Filter by cost (e.g., `2`, `2-4`, `4+`, `<3`).
+- `blades`: Filter by blades (e.g., `1`, `1+`).
+- `heart_color`: Filter by required heart color (e.g., `Red`).
+- `heart_count`: Count for the heart color (e.g., `2`, `2+`).
+- `blade_heart`: Filter by blade heart symbols (e.g., `Score`, `Draw`, `Pink`).
+- `rarity`: Filter by rarity.
+
+**Usage Examples**:
+- Find Honoka cards with cost 2 or less: `/search keyword:Honoka cost:<3`
+- Find cards requiring 2 Red hearts: `/search heart_color:Red heart_count:2`
+- Find Score triggers: `/search blade_heart:Score`
+
+**Note**: If no arguments are provided, it launches the **/advanced_search** dashboard.
 
 ### `/advanced_search`
 Opens the interactive **Advanced Search Dashboard**.
