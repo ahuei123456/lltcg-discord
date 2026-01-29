@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -9,107 +9,77 @@ from src.cogs.card_search import CardSearch
 def search_cog():
     bot = MagicMock()
     card_repo = MagicMock()
+    # Mock search_rarity for autocomplete
+    card_repo.search_rarity.return_value = ["L+", "SR"]
     return CardSearch(bot, card_repo)
 
 
 @pytest.mark.asyncio
-async def test_character_autocomplete(search_cog):
-    # Test input "Honoka"
+async def test_keyword_autocomplete_character(search_cog):
+    # Test "Honoka" -> matches Character
     interaction = MagicMock()
-    choices = await search_cog.character_autocomplete(interaction, "Honoka")
+    choices = await search_cog.keyword_autocomplete(interaction, "Honoka")
 
-    # Should find at least "Honoka (高坂穂乃果)" -> value="高坂穂乃果"
-    assert len(choices) > 0
-    # Check if correct choice exists
-    found = any(c.name == "Honoka (高坂穂乃果)" and c.value == "高坂穂乃果" for c in choices)
+    # Expect "Char: Kousaka Honoka" -> value "高坂穂乃果"
+    found = any("Honoka" in c.name and c.value == "高坂穂乃果" for c in choices)
     assert found
 
 
 @pytest.mark.asyncio
-async def test_character_autocomplete_lowercase(search_cog):
-    # Test input "honoka"
+async def test_keyword_autocomplete_unit(search_cog):
+    # Test "Printemps" -> matches Unit
     interaction = MagicMock()
-    choices = await search_cog.character_autocomplete(interaction, "honoka")
-    found = any(c.value == "高坂穂乃果" for c in choices)
+    choices = await search_cog.keyword_autocomplete(interaction, "Prin")
+
+    found = any("Unit: Printemps" in c.name and c.value == "Printemps" for c in choices)
     assert found
 
 
 @pytest.mark.asyncio
-async def test_unit_autocomplete(search_cog):
-    # Test input "printemps"
+async def test_keyword_autocomplete_group(search_cog):
+    # Test "Aquors" -> matches Group (Wait, input "Aqours", map key "Aqours")
     interaction = MagicMock()
-    choices = await search_cog.unit_autocomplete(interaction, "printemps")
+    choices = await search_cog.keyword_autocomplete(interaction, "Aqou")
 
-    # Should find "Printemps" -> value "Printemps" (DB Value)
-    found = any(c.name == "Printemps" and c.value == "Printemps" for c in choices)
+    found = any("Group: Aqours" in c.name and c.value == "ラブライブ！サンシャイン!!" for c in choices)
     assert found
 
 
 @pytest.mark.asyncio
-async def test_group_autocomplete(search_cog):
-    # Test input "ni" -> Nijigasaki
+async def test_search_command_flow(search_cog):
     interaction = MagicMock()
-    choices = await search_cog.group_autocomplete(interaction, "ni")
-
-    # Name: "Nijigasaki", Value: "ラブライブ！虹ヶ咲学園スクールアイドル同好会"
-    found = any(c.name == "Nijigasaki" and c.value == "ラブライブ！虹ヶ咲学園スクールアイドル同好会" for c in choices)
-    assert found
-
-
-@pytest.mark.asyncio
-async def test_search_no_args(search_cog):
-    interaction = MagicMock()
-    # Mock response to be async
-    interaction.response.send_message = MagicMock()
-
-    # helper for async mocks if needed, but MagicMock returns MagicMock which is awaitable if configured?
-    # standard MagicMock isn't awaitable. We need AsyncMock.
-    # unittest.mock.AsyncMock is available in Python 3.8+
-    from unittest.mock import AsyncMock
-
-    interaction.response.send_message = AsyncMock()
-
-    # Call the callback directly since the attribute is a Command object
-    await search_cog.search.callback(
-        search_cog, interaction, query=None, character=None, unit=None, group=None, rarity=None
-    )
-
-    # Should send ephemeral message pointing to advanced_search
-    interaction.response.send_message.assert_called_once()
-    args, kwargs = interaction.response.send_message.call_args
-    assert "Please provide at least one search filter" in args[0]
-    assert kwargs.get("ephemeral") is True
-
-
-@pytest.mark.asyncio
-async def test_search_with_args(search_cog):
-    interaction = MagicMock()
-    from unittest.mock import AsyncMock
-
     interaction.response.defer = AsyncMock()
     interaction.followup.send = AsyncMock()
-    search_cog.card_repo.search_cards.return_value = []  # Return empty list to avoid embed build error
+    interaction.edit_original_response = AsyncMock()
+    interaction.response.is_done.return_value = True  # Simulate deferred
 
+    search_cog.card_repo.search_cards.return_value = []
+
+    # Call search with some filters
     await search_cog.search.callback(
-        search_cog, interaction, query="Test", character=None, unit=None, group=None, rarity=None
+        search_cog, interaction, keyword="Test", cost="4+", heart_color="Red", heart_count="2"
     )
 
     interaction.response.defer.assert_called_once()
-    search_cog.card_repo.search_cards.assert_called_once()
-    interaction.followup.send.assert_called_once()
+
+    # Check repo call
+    args, kwargs = search_cog.card_repo.search_cards.call_args
+    filters = kwargs["filters"]
+
+    assert filters["keyword"] == "Test"
+    assert filters["cost_min"] == 4  # 4+ parsed
+    assert filters["hearts"]["heart02"] == "2"  # Red -> heart02
+
+    # Check display called (edit_original_response since deferred)
+    interaction.edit_original_response.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_advanced_search_command(search_cog):
+async def test_search_invalid_cost(search_cog):
     interaction = MagicMock()
-    from unittest.mock import AsyncMock
+    interaction.response.defer = AsyncMock()
 
-    interaction.response.send_message = AsyncMock()
+    from src.utils.errors import InvalidLookupArgsError
 
-    await search_cog.advanced_search.callback(search_cog, interaction)
-
-    interaction.response.send_message.assert_called_once()
-    args, kwargs = interaction.response.send_message.call_args
-    assert "Launching Advanced Search Dashboard" in args[0]
-    assert "view" in kwargs
-    assert kwargs.get("ephemeral") is True
+    with pytest.raises(InvalidLookupArgsError):
+        await search_cog.search.callback(search_cog, interaction, cost="invalid")
