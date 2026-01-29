@@ -136,14 +136,14 @@ class CardSearch(commands.Cog):
         cost="Cost (e.g. 4, 2-4, 4+, <4)",
         heart_color="Required heart color filter",
         heart_count="Count for heart color (e.g. 2, 2+). Ignored if color not set.",
-        blade_heart="Blade Heart Requirement",
-        blades="Unpaid Blades (e.g. 1, 1+)",
+        blade_heart="Blade Heart of the card",
+        blades="# of blades on the card",
         rarity="Card Rarity",
     )
     @app_commands.choices(
         card_type=[
-            app_commands.Choice(name="Member", value="Member"),
-            app_commands.Choice(name="Live", value="Live"),
+            app_commands.Choice(name="Member", value="メンバー"),
+            app_commands.Choice(name="Live", value="ライブ"),
         ],
         heart_color=[app_commands.Choice(name=k, value=k) for k in COLOR_MAP],
         blade_heart=[
