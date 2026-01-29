@@ -148,15 +148,15 @@ class CardSearch(commands.Cog):
         heart_color=[app_commands.Choice(name=k, value=k) for k in COLOR_MAP],
         blade_heart=[
             app_commands.Choice(name="All", value="ALL"),
-            app_commands.Choice(name="Score", value="Score"),
-            app_commands.Choice(name="Draw", value="Draw"),
+            app_commands.Choice(name="Score", value="スコア"),
+            app_commands.Choice(name="Draw", value="ドロー"),
             # Add Colors to Blade Heart choices if desired, or simplified list
-            app_commands.Choice(name="Pink", value="heart01"),
-            app_commands.Choice(name="Red", value="heart02"),
-            app_commands.Choice(name="Yellow", value="heart03"),
-            app_commands.Choice(name="Green", value="heart04"),
-            app_commands.Choice(name="Blue", value="heart05"),
-            app_commands.Choice(name="Purple", value="heart06"),
+            app_commands.Choice(name="Pink", value="b_heart01"),
+            app_commands.Choice(name="Red", value="b_heart02"),
+            app_commands.Choice(name="Yellow", value="b_heart03"),
+            app_commands.Choice(name="Green", value="b_heart04"),
+            app_commands.Choice(name="Blue", value="b_heart05"),
+            app_commands.Choice(name="Purple", value="b_heart06"),
         ],
     )
     @app_commands.autocomplete(keyword=keyword_autocomplete, rarity=rarity_autocomplete)
@@ -227,14 +227,9 @@ class CardSearch(commands.Cog):
             # Helper map for blade hearts specifically (or reuse state logic)
             # Standardizing:
             if blade_heart == "ALL":
-                filters["blade_hearts"] = ["ALL1", "ALL2"]  # Search both generic alls?
-            elif blade_heart == "Score":
-                filters["blade_hearts"] = ["Score"]
-            elif blade_heart == "Draw":
-                filters["blade_hearts"] = ["Draw"]
+                filters["blade_hearts"] = ["ALL1", "ALL2"]
             else:
-                # It's a color key from choices (e.g. heart01) or a color name?
-                # Choices used values like heart01.
+                # Value from choices is already correct (e.g. "スコア", "ドロー", "b_heart01")
                 filters["blade_hearts"] = [blade_heart]
 
         # Prepare filters
