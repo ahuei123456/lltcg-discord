@@ -12,7 +12,8 @@ dependencies = [
     "discord-py==2.5.2",
     "python-dotenv==1.0.1",
     "requests",
-    "aiohttp"
+    "aiohttp",
+    "certifi>=2026.10.19",
 ]
 
 [tool.uv]
